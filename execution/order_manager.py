@@ -29,6 +29,26 @@ PAPER_TRADES_FILE = TRADES_DIR / "paper_trades.json"
 KILL_FILE = PROJECT_ROOT / "KILL"
 
 
+def calc_trade_pnl(position: "Position", close_price: float) -> float:
+    """Calculate gross P&L in USDC for a closed position.
+
+    Pure function — usable by the backtest engine, journal, and main loop
+    without importing the full OrderManager.
+
+    Args:
+        position: The closed Position dataclass.
+        close_price: Price at which the position was closed.
+
+    Returns:
+        P&L in USDC (positive = profit, negative = loss).
+        Does not include fees or funding payments.
+    """
+    price_delta = close_price - position.entry_price
+    if position.side == "short":
+        price_delta = -price_delta
+    return price_delta * position.size_coins
+
+
 @dataclass
 class Position:
     """An open position tracked by the order manager.
@@ -583,21 +603,8 @@ class OrderManager:
         return current_close >= position.stop_price
 
     def _calc_pnl(self, position: Position, close_price: float) -> float:
-        """Calculate gross P&L in USDC for a closed position.
-
-        Does not account for fees or funding. The journal adds those later.
-
-        Args:
-            position: The closed position.
-            close_price: Price at which the position was closed.
-
-        Returns:
-            P&L in USDC (positive = profit).
-        """
-        price_delta = close_price - position.entry_price
-        if position.side == "short":
-            price_delta = -price_delta
-        return price_delta * position.size_coins
+        """Delegate to the module-level calc_trade_pnl."""
+        return calc_trade_pnl(position, close_price)
 
     def _find_entry_candle_idx(
         self, candles: list[dict], entry_time_ms: int
