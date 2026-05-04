@@ -1,0 +1,26 @@
+{
+    "editor.formatOnSave": true,
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+        }
+    },
+    "workbench.editorAssociations": {
+        "*.parquet": "duckdb.dataFileViewer",
+        "*.csv": "duckdb.dataFileViewer",
+        "*.tsv": "duckdb.dataFileViewer",
+        "*.xlsx": "duckdb.dataFileViewer"
+    },
+    "duckdb.defaultDatabase": "lake",
+    "duckdb.databases": [
+        {
+            "alias": "lake",
+            "type": "file",
+            "path": "/Users/coreycasmedes/Code/hyperliquid-skills/data/lake.duckdb",
+            "attached": true
+        }
+    ]
+}
