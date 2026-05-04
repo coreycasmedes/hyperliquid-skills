@@ -31,7 +31,7 @@ from data.lake import CandleLake
 from execution.order_manager import OrderManager, calc_trade_pnl
 from journal.logger import CSVLogger
 from risk.gate import PortfolioState, RiskGate
-from signals.strategy import ThreeEMACross
+from signals import get_strategy
 
 PROJECT_ROOT = Path(__file__).parent
 TRADES_DIR = PROJECT_ROOT / "trades"
@@ -90,7 +90,7 @@ def run_live_loop(coin: str, config: dict) -> None:
     mode = config["execution"]["mode"]
     interval = config["interval"]
 
-    strategy = ThreeEMACross(coin, config["strategy"])
+    strategy = get_strategy(coin, config["strategy"])
     gate = RiskGate(config["risk"])
     manager = OrderManager(config)
     logger = CSVLogger(TRADES_DIR / "journal.csv")
@@ -203,6 +203,11 @@ def main() -> None:
         action="store_true",
         help="Show what's stored in the Parquet lake and exit.",
     )
+    parser.add_argument(
+        "--config",
+        default="config.json",
+        help="Config file to load (default: config.json).",
+    )
 
     args = parser.parse_args()
 
@@ -218,7 +223,8 @@ def main() -> None:
         )
         sys.exit(1)
 
-    with open(PROJECT_ROOT / "config.json") as f:
+    config_path = PROJECT_ROOT / args.config
+    with open(config_path) as f:
         config = json.load(f)
 
     # CLI mode overrides config so you don't have to edit the file for paper runs

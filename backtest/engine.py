@@ -17,7 +17,8 @@ from data.fetcher import load_funding_map
 from execution.order_manager import Position, calc_trade_pnl
 from journal.logger import CSVLogger, JournalBackend
 from risk.gate import PortfolioState, RiskGate
-from signals.strategy import Signal, ThreeEMACross
+from signals import get_strategy
+from signals.strategy import Signal
 
 PROJECT_ROOT = Path(__file__).parent.parent
 TRADES_DIR = PROJECT_ROOT / "trades"
@@ -56,7 +57,7 @@ class BacktestEngine:
         self.config = config
         self.interval = config["interval"]
 
-        self.strategy = ThreeEMACross(coin, config["strategy"])
+        self.strategy = get_strategy(coin, config["strategy"])
         self.gate = RiskGate(config["risk"])
 
         self.atr_mult: float = config["strategy"].get("atr_stop_mult", 1.5)
@@ -81,7 +82,7 @@ class BacktestEngine:
         Returns:
             Summary stats dict from logger.summary().
         """
-        min_required = self.strategy.ema_slow + self.strategy.cross_lookback + 2
+        min_required = self.strategy.warmup_candles
 
         portfolio = PortfolioState(
             starting_equity=self.capital * 10,
@@ -234,7 +235,7 @@ def _check_exit(
     i: int,
     position: Position,
     entry_idx: int | None,
-    strategy: ThreeEMACross,
+    strategy: object,
 ) -> tuple[str, str, float] | None:
     """Two-stage exit check for a single candle.
 

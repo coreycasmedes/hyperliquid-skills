@@ -26,11 +26,11 @@ class Signal:
         reason: Short string identifying the trigger, e.g. "3ema_cross_long".
         timestamp: Open-time (ms) of the candle that generated the signal.
         coin: Asset symbol.
-        ema_fast: EMA-fast value at signal time (logged for journaling).
-        ema_mid: EMA-mid value at signal time.
-        ema_slow: EMA-slow value at signal time.
         atr: ATR value at signal time.
         funding_rate: Live funding rate at signal time.
+        ema_fast: EMA-fast value at signal time (ThreeEMACross only).
+        ema_mid: EMA-mid value at signal time (ThreeEMACross only).
+        ema_slow: EMA-slow value at signal time (ThreeEMACross only).
     """
 
     side: str
@@ -39,11 +39,11 @@ class Signal:
     reason: str
     timestamp: int
     coin: str
-    ema_fast: float
-    ema_mid: float
-    ema_slow: float
     atr: float
     funding_rate: float
+    ema_fast: float = 0.0
+    ema_mid: float = 0.0
+    ema_slow: float = 0.0
 
 
 class ThreeEMACross:
@@ -82,6 +82,10 @@ class ThreeEMACross:
         self.direction: str = config.get("direction", "long_only")
         self.max_hold_candles: int = config.get("max_hold_candles", 48)
         self.cross_lookback: int = config.get("cross_lookback", 3)
+
+    @property
+    def warmup_candles(self) -> int:
+        return self.ema_slow + self.cross_lookback + 2
 
     # ------------------------------------------------------------------
     # Public interface
@@ -150,11 +154,11 @@ class ThreeEMACross:
                         reason="3ema_cross_long",
                         timestamp=candles[last]["t"],
                         coin=self.coin,
+                        atr=atr,
+                        funding_rate=funding_rate,
                         ema_fast=fast,
                         ema_mid=mid,
                         ema_slow=slow,
-                        atr=atr,
-                        funding_rate=funding_rate,
                     )
 
         if self.direction in ("short_only", "both"):
@@ -167,11 +171,11 @@ class ThreeEMACross:
                         reason="3ema_cross_short",
                         timestamp=candles[last]["t"],
                         coin=self.coin,
+                        atr=atr,
+                        funding_rate=funding_rate,
                         ema_fast=fast,
                         ema_mid=mid,
                         ema_slow=slow,
-                        atr=atr,
-                        funding_rate=funding_rate,
                     )
 
         return None

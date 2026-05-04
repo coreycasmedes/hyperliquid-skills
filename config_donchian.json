@@ -1,22 +1,19 @@
 {
   "version": 1,
-  "notes": "Initial params. Long-only on HYPE at 15m. Conservative 3x leverage. Tighten atr_stop_mult or widen max_daily_loss_pct after first backtest.",
+  "notes": "Donchian Channel Breakout. Both directions on HYPE at 15m. 20-bar channel, ATR stop at 1.5x.",
 
   "coins": ["HYPE", "BTC", "ETH", "SOL"],
   "interval": "15m",
   "lookback_days": 90,
 
   "strategy": {
-    "type": "three_ema_cross",
-    "ema_fast": 8,
-    "ema_mid": 21,
-    "ema_slow": 50,
+    "type": "donchian",
+    "channel_period": 20,
     "atr_period": 14,
     "atr_stop_mult": 1.5,
     "funding_rate_max": 0.0005,
-    "direction": "long_only",
-    "max_hold_candles": 48,
-    "cross_lookback": 3
+    "direction": "both",
+    "max_hold_candles": 48
   },
 
   "risk": {

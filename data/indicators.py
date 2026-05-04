@@ -123,6 +123,42 @@ def calc_rsi(closes: list[float], period: int = 14) -> list[float]:
     return result
 
 
+def calc_bollinger_bands(
+    closes: list[float], period: int, std_mult: float = 2.0
+) -> tuple[list[float], list[float], list[float]]:
+    """Calculate Bollinger Bands (upper, middle, lower).
+
+    Middle band is a simple moving average. Upper and lower bands are
+    middle ± std_mult standard deviations (population std dev over the window).
+
+    Args:
+        closes: List of closing prices.
+        period: Lookback period for SMA and std dev.
+        std_mult: Number of standard deviations for band width (default 2.0).
+
+    Returns:
+        Tuple of (upper, middle, lower) lists, each the same length as closes.
+        Indices 0 through period-2 are NaN (insufficient history).
+    """
+    import math as _math
+
+    n = len(closes)
+    upper = [float("nan")] * n
+    middle = [float("nan")] * n
+    lower = [float("nan")] * n
+
+    for i in range(period - 1, n):
+        window = closes[i - period + 1 : i + 1]
+        sma = sum(window) / period
+        variance = sum((x - sma) ** 2 for x in window) / period
+        std = _math.sqrt(variance)
+        middle[i] = sma
+        upper[i] = sma + std_mult * std
+        lower[i] = sma - std_mult * std
+
+    return upper, middle, lower
+
+
 def calc_funding_rate(coin: str) -> float:
     """Fetch the current (latest) funding rate for a coin.
 
