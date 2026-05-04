@@ -5,3 +5,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# Generated data and trade logs — never commit
+data/*.json
+trades/*.csv
+trades/*.json
