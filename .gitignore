@@ -8,5 +8,8 @@ build/
 
 # Generated data and trade logs — never commit
 data/*.json
+data/lake/
+data/metadata.json
+data/*.duckdb
 trades/*.csv
 trades/*.json

@@ -10,11 +10,10 @@ touching the engine.
 """
 
 import json
-from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Optional
 
+from data.fetcher import load_funding_map
 from execution.order_manager import Position, calc_trade_pnl
 from journal.logger import CSVLogger, JournalBackend
 from risk.gate import PortfolioState, RiskGate
@@ -38,8 +37,8 @@ class BacktestEngine:
     def __init__(
         self,
         coin: str,
-        config: Optional[dict] = None,
-        logger: Optional[JournalBackend] = None,
+        config: dict | None = None,
+        logger: JournalBackend | None = None,
     ):
         """Initialise the engine.
 
@@ -90,16 +89,24 @@ class BacktestEngine:
             peak_equity=self.capital * 10,
         )
 
-        open_position: Optional[Position] = None
-        open_position_entry_idx: Optional[int] = None  # candle index of fill
-        pending_signal: Optional[Signal] = None        # signal queued for next open
-        entry_signal: Optional[Signal] = None          # signal held until trade closes
+        open_position: Position | None = None
+        open_position_entry_idx: int | None = None  # candle index of fill
+        pending_signal: Signal | None = None  # signal queued for next open
+        entry_signal: Signal | None = None  # signal held until trade closes
 
-        print(f"Running backtest: {self.coin} {self.interval}  "
-              f"({len(candles)} candles, warmup={min_required})")
+        funding_map = load_funding_map(self.coin)
+        if not funding_map:
+            print(
+                f"  Warning: no funding data for {self.coin} — using 0.0 for all candles. "
+                "Run with --fetch to download funding history."
+            )
+
+        print(
+            f"Running backtest: {self.coin} {self.interval}  "
+            f"({len(candles)} candles, warmup={min_required})"
+        )
 
         for i in range(min_required, len(candles)):
-
             # ── 1. Fill pending entry at this candle ──────────────────────
             if pending_signal is not None:
                 fill = _fill_price(pending_signal, candles[i])
@@ -146,7 +153,10 @@ class BacktestEngine:
 
             # ── 3. Generate signal if flat ─────────────────────────────────
             if open_position is None and pending_signal is None:
-                signal = self.strategy.generate_signal(candles[: i + 1])
+                funding_rate = _lookup_funding(funding_map, candles[i]["t"])
+                signal = self.strategy.generate_signal(
+                    candles[: i + 1], funding_rate=funding_rate
+                )
                 if signal is not None:
                     approved, _ = self.gate.approve(signal, portfolio)
                     if approved:
@@ -174,7 +184,18 @@ class BacktestEngine:
 # ── Module-level helpers ───────────────────────────────────────────────────────
 
 
-def _fill_price(signal: Signal, candle: dict) -> Optional[float]:
+def _lookup_funding(funding_map: dict, candle_t: int) -> float:
+    """Return the funding rate for the hour containing candle_t.
+
+    Floors candle_t to the nearest hour boundary (same key format used when
+    the funding map was built). Falls back to 0.0 when the hour is absent,
+    which happens if funding history doesn't cover that period.
+    """
+    hour_ms = (candle_t // 3_600_000) * 3_600_000
+    return funding_map.get(hour_ms, 0.0)
+
+
+def _fill_price(signal: Signal, candle: dict) -> float | None:
     """Simulate a limit entry order filling at the given candle.
 
     Long limit buy:
@@ -195,16 +216,16 @@ def _fill_price(signal: Signal, candle: dict) -> Optional[float]:
 
     if signal.side == "long":
         if candle["o"] <= limit:
-            return candle["o"]   # gap fill at open
+            return candle["o"]  # gap fill at open
         if candle["l"] <= limit:
-            return limit         # traded to limit
+            return limit  # traded to limit
         return None
 
     else:  # short
         if candle["o"] >= limit:
-            return candle["o"]   # gap fill at open
+            return candle["o"]  # gap fill at open
         if candle["h"] >= limit:
-            return limit         # traded to limit
+            return limit  # traded to limit
         return None
 
 
@@ -212,9 +233,9 @@ def _check_exit(
     candles: list[dict],
     i: int,
     position: Position,
-    entry_idx: Optional[int],
+    entry_idx: int | None,
     strategy: ThreeEMACross,
-) -> Optional[tuple[str, str, float]]:
+) -> tuple[str, str, float] | None:
     """Two-stage exit check for a single candle.
 
     Stage 1 — Intra-candle hard stop:
@@ -271,15 +292,15 @@ def _print_summary(summary: dict, coin: str, interval: str, version: int) -> Non
     """Print a formatted performance summary table to stdout."""
     width = 42
 
-    def _fmt_usd(v: Optional[float]) -> str:
+    def _fmt_usd(v: float | None) -> str:
         if v is None:
             return "N/A"
         return f"+${v:.2f}" if v >= 0 else f"-${abs(v):.2f}"
 
-    def _fmt_pct(v: Optional[float]) -> str:
+    def _fmt_pct(v: float | None) -> str:
         return f"{v:.1f}%" if v is not None else "N/A"
 
-    def _fmt_factor(v: Optional[float]) -> str:
+    def _fmt_factor(v: float | None) -> str:
         if v is None:
             return "N/A"
         return "∞" if v == float("inf") else f"{v:.2f}"

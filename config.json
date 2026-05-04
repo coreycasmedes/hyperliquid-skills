@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "notes": "Initial params. Long-only on HYPE at 15m. Conservative 3x leverage. Tighten atr_stop_mult or widen max_daily_loss_pct after first backtest.",
+
+  "coins": ["HYPE", "BTC", "ETH", "SOL"],
+  "interval": "15m",
+  "lookback_days": 90,
+
+  "strategy": {
+    "ema_fast": 8,
+    "ema_mid": 21,
+    "ema_slow": 50,
+    "atr_period": 14,
+    "atr_stop_mult": 1.5,
+    "funding_rate_max": 0.0005,
+    "direction": "long_only",
+    "max_hold_candles": 48,
+    "cross_lookback": 3
+  },
+
+  "risk": {
+    "max_open_positions": 1,
+    "max_daily_loss_pct": 5.0,
+    "max_drawdown_pct": 15.0,
+    "capital_per_trade": 100,
+    "leverage": 3
+  },
+
+  "execution": {
+    "mode": "paper",
+    "network": "testnet",
+    "tick_offset_ticks": 2
+  }
+}

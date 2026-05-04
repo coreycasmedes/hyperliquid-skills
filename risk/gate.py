@@ -7,7 +7,7 @@ a reason string so the journal can record why a signal was skipped.
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from signals.strategy import Signal
@@ -69,7 +69,7 @@ class RiskGate:
     the rest so the reason is always specific.
     """
 
-    def __init__(self, config: Optional[dict] = None):
+    def __init__(self, config: dict | None = None):
         """Load risk parameters from config.json or a supplied dict.
 
         Args:

@@ -50,14 +50,14 @@ def main() -> None:
 
     # (display_name, stats_key, format_string, higher_is_better)
     metrics = [
-        ("Total trades",   "total_trades",  "{:.0f}",   None),   # neutral
-        ("Win rate",       "win_rate",      "{:.1f}%",  True),
-        ("Total P&L",      "total_pnl",     "${:+.2f}", True),
-        ("Avg winner",     "avg_winner",    "${:+.2f}", True),
-        ("Avg loser",      "avg_loser",     "${:+.2f}", True),
-        ("Profit factor",  "profit_factor", "{:.2f}",   True),
-        ("Max drawdown",   "max_drawdown",  "${:+.2f}", True),
-        ("Sharpe (trade)", "sharpe_ratio",  "{:.2f}",   True),
+        ("Total trades", "total_trades", "{:.0f}", None),  # neutral
+        ("Win rate", "win_rate", "{:.1f}%", True),
+        ("Total P&L", "total_pnl", "${:+.2f}", True),
+        ("Avg winner", "avg_winner", "${:+.2f}", True),
+        ("Avg loser", "avg_loser", "${:+.2f}", True),
+        ("Profit factor", "profit_factor", "{:.2f}", True),
+        ("Max drawdown", "max_drawdown", "${:+.2f}", True),
+        ("Sharpe (trade)", "sharpe_ratio", "{:.2f}", True),
     ]
 
     col = max(len(label1), len(label2), 28)

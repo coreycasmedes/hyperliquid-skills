@@ -4,6 +4,23 @@ version = "0.1.0"
 description = "Modular algorithmic trading system for Hyperliquid perpetuals"
 requires-python = ">=3.12"
 dependencies = [
+    "duckdb>=1.1.0",
     "hyperliquid-python-sdk>=0.23.0",
+    "pyarrow>=18.0.0",
     "requests>=2.33.1",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.12",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]  # pycodestyle, pyflakes, isort, pyupgrade
+
+[tool.ruff.format]
+quote-style = "double"

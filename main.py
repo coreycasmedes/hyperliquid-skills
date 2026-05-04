@@ -20,7 +20,14 @@ import time
 from pathlib import Path
 
 from backtest.engine import BacktestEngine
-from data.fetcher import INTERVAL_MINUTES, fetch_and_save, get_latest_candles, load_candles
+from data.fetcher import (
+    INTERVAL_MINUTES,
+    fetch_and_save,
+    fetch_and_save_funding,
+    get_latest_candles,
+    load_candles,
+)
+from data.lake import CandleLake
 from execution.order_manager import OrderManager, calc_trade_pnl
 from journal.logger import CSVLogger
 from risk.gate import PortfolioState, RiskGate
@@ -32,6 +39,7 @@ KILL_FILE = PROJECT_ROOT / "KILL"
 
 
 # ── Safety helpers ─────────────────────────────────────────────────────────────
+
 
 def _check_kill_switch() -> None:
     """Exit immediately if a file named KILL exists in the project root."""
@@ -53,6 +61,7 @@ def _candle_is_closed(candle: dict, interval: str) -> bool:
 
 # ── Modes ──────────────────────────────────────────────────────────────────────
 
+
 def run_backtest(coin: str, config: dict) -> None:
     """Load candles from disk and run the walk-forward backtest engine.
 
@@ -60,7 +69,8 @@ def run_backtest(coin: str, config: dict) -> None:
         coin: Asset symbol to backtest.
         config: Full config dict.
     """
-    candles = load_candles(coin, config["interval"])
+    lookback = config.get("lookback_days", 90)
+    candles = load_candles(coin, config["interval"], lookback_days=lookback)
     print(f"Loaded {len(candles)} candles for {coin} {config['interval']}")
     engine = BacktestEngine(coin, config)
     engine.run(candles)
@@ -158,6 +168,7 @@ def run_live_loop(coin: str, config: dict) -> None:
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     """Parse CLI args and dispatch to the appropriate mode."""
     parser = argparse.ArgumentParser(
@@ -187,13 +198,24 @@ def main() -> None:
         action="store_true",
         help="Required alongside --mode live. Acknowledges real money is at risk.",
     )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Show what's stored in the Parquet lake and exit.",
+    )
 
     args = parser.parse_args()
+
+    if args.stats:
+        CandleLake().print_stats()
+        sys.exit(0)
 
     # ── Live mode safety gate ─────────────────────────────────────────────
     if args.mode == "live" and not args.confirm:
         print("ERROR: Live trading requires the --confirm flag.\n")
-        print("  uv run --env-file .env python main.py --mode live --coin HYPE --confirm")
+        print(
+            "  uv run --env-file .env python main.py --mode live --coin HYPE --confirm"
+        )
         sys.exit(1)
 
     with open(PROJECT_ROOT / "config.json") as f:
@@ -206,10 +228,9 @@ def main() -> None:
     TRADES_DIR.mkdir(exist_ok=True)
 
     if args.fetch:
-        fetch_and_save(args.coin, config["interval"], config.get("lookback_days", 90))
-        if args.mode == "backtest":
-            # --fetch with backtest means just refresh data, then run
-            pass
+        lookback = config.get("lookback_days", 90)
+        fetch_and_save(args.coin, config["interval"], lookback)
+        fetch_and_save_funding(args.coin, lookback)
 
     if args.mode == "backtest":
         run_backtest(args.coin, config)

@@ -9,9 +9,9 @@ a pure function so compare.py can reuse it without duplicating the math.
 
 import csv
 import statistics
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from execution.order_manager import Position
@@ -112,7 +112,7 @@ def compute_stats(rows: list[dict]) -> dict:
         max_dd = max(max_dd, peak - equity)
 
     # Sharpe ratio — trade-level, unannualized (requires >= 2 trades)
-    sharpe: Optional[float] = None
+    sharpe: float | None = None
     if len(pnl_pcts) >= 2:
         mean_r = statistics.mean(pnl_pcts)
         std_r = statistics.stdev(pnl_pcts)
@@ -178,7 +178,7 @@ class CSVLogger:
         pnl_pct = (pnl_usd / margin * 100) if margin > 0 else 0.0
 
         ts = datetime.fromtimestamp(
-            position.entry_time_ms / 1000, tz=timezone.utc
+            position.entry_time_ms / 1000, tz=UTC
         ).isoformat()
 
         row = {

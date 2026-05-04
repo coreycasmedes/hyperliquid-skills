@@ -18,7 +18,7 @@ import random
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from signals.strategy import Signal, ThreeEMACross
@@ -72,8 +72,8 @@ class Position:
     size_coins: float
     entry_time_ms: int
     leverage: int
-    order_id: Optional[str] = None
-    stop_order_id: Optional[str] = None
+    order_id: str | None = None
+    stop_order_id: str | None = None
 
 
 @dataclass
@@ -99,8 +99,8 @@ class OrderResult:
     size_coins: float
     price: float
     timestamp_ms: int
-    order_id: Optional[str] = None
-    error: Optional[str] = None
+    order_id: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -128,7 +128,7 @@ class OrderManager:
     The caller (main loop) is responsible for tracking open positions.
     """
 
-    def __init__(self, config: Optional[dict] = None):
+    def __init__(self, config: dict | None = None):
         """Load execution config and, for LIVE mode, initialise the SDK client.
 
         Args:
@@ -174,11 +174,11 @@ class OrderManager:
         account_address = os.environ.get("HL_ACCOUNT_ADDRESS")
 
         if not private_key:
-            raise EnvironmentError(
+            raise OSError(
                 "HL_PRIVATE_KEY not found. Run: uv run --env-file .env python main.py"
             )
         if not account_address:
-            raise EnvironmentError(
+            raise OSError(
                 "HL_ACCOUNT_ADDRESS not found. Run: uv run --env-file .env python main.py"
             )
 
@@ -197,7 +197,9 @@ class OrderManager:
     # Public interface
     # ------------------------------------------------------------------
 
-    def open_position(self, signal: "Signal", size_coins: float) -> tuple[Optional[Position], OrderResult]:
+    def open_position(
+        self, signal: "Signal", size_coins: float
+    ) -> tuple[Position | None, OrderResult]:
         """Place an entry order for a signal.
 
         In LIVE mode: sets leverage, places a limit entry order, then places
@@ -400,16 +402,14 @@ class OrderManager:
         size_coins: float,
         limit_price: float,
         timestamp_ms: int,
-    ) -> tuple[Optional[Position], OrderResult]:
+    ) -> tuple[Position | None, OrderResult]:
         """Place a live limit entry + stop-loss order after user confirmation."""
         is_buy = signal.side == "long"
         stop_is_buy = not is_buy
 
         stop_trigger = str(round(signal.stop_price, 6))
         # Limit price for the stop order sits 5% beyond trigger to avoid rejection
-        stop_limit = str(round(
-            signal.stop_price * (0.95 if is_buy else 1.05), 6
-        ))
+        stop_limit = str(round(signal.stop_price * (0.95 if is_buy else 1.05), 6))
 
         print("\n" + "=" * 50)
         print(f"  LIVE ORDER — {self.network.upper()}")
@@ -446,7 +446,13 @@ class OrderManager:
                 limit_price,
                 {"limit": {"tif": "Gtc"}},
             )
-            order_id = str(entry_resp.get("response", {}).get("data", {}).get("statuses", [{}])[0].get("resting", {}).get("oid", ""))
+            order_id = str(
+                entry_resp.get("response", {})
+                .get("data", {})
+                .get("statuses", [{}])[0]
+                .get("resting", {})
+                .get("oid", "")
+            )
 
             stop_type = {
                 "trigger": {
@@ -463,7 +469,13 @@ class OrderManager:
                 stop_type,
                 reduce_only=True,
             )
-            stop_order_id = str(stop_resp.get("response", {}).get("data", {}).get("statuses", [{}])[0].get("resting", {}).get("oid", ""))
+            stop_order_id = str(
+                stop_resp.get("response", {})
+                .get("data", {})
+                .get("statuses", [{}])[0]
+                .get("resting", {})
+                .get("oid", "")
+            )
 
         except Exception as exc:
             return None, OrderResult(
@@ -546,7 +558,13 @@ class OrderManager:
                 {"limit": {"tif": "Gtc"}},
                 reduce_only=True,
             )
-            order_id = str(close_resp.get("response", {}).get("data", {}).get("statuses", [{}])[0].get("resting", {}).get("oid", ""))
+            order_id = str(
+                close_resp.get("response", {})
+                .get("data", {})
+                .get("statuses", [{}])[0]
+                .get("resting", {})
+                .get("oid", "")
+            )
 
         except Exception as exc:
             return OrderResult(
@@ -608,7 +626,7 @@ class OrderManager:
 
     def _find_entry_candle_idx(
         self, candles: list[dict], entry_time_ms: int
-    ) -> Optional[int]:
+    ) -> int | None:
         """Find the index of the entry candle in the current candles list.
 
         Args:

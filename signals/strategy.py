@@ -9,7 +9,6 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from data.indicators import calc_atr, calc_ema, calc_funding_rate
 
@@ -61,7 +60,7 @@ class ThreeEMACross:
       c. Timeout: position held for max_hold_candles without an exit.
     """
 
-    def __init__(self, coin: str, config: Optional[dict] = None):
+    def __init__(self, coin: str, config: dict | None = None):
         """Load strategy parameters from config.json or a supplied dict.
 
         Args:
@@ -88,7 +87,11 @@ class ThreeEMACross:
     # Public interface
     # ------------------------------------------------------------------
 
-    def generate_signal(self, candles: list[dict]) -> Optional[Signal]:
+    def generate_signal(
+        self,
+        candles: list[dict],
+        funding_rate: float | None = None,
+    ) -> Signal | None:
         """Evaluate the most recent closed candle and return a Signal if triggered.
 
         IMPORTANT: the last candle in `candles` must be fully closed before
@@ -97,6 +100,9 @@ class ThreeEMACross:
 
         Args:
             candles: List of closed OHLCV candle dicts (keys: t, o, h, l, c, v, n).
+            funding_rate: Override the live funding rate fetch. Pass 0.0 from the
+                backtest engine to avoid thousands of API calls over history.
+                If None (default), fetches live from the Hyperliquid API.
 
         Returns:
             Signal if all entry conditions are met, otherwise None.
@@ -121,11 +127,13 @@ class ThreeEMACross:
         if any(math.isnan(v) for v in [fast, mid, slow, atr]):
             return None
 
-        # Funding rate filter — if the fetch fails, skip filtering rather than crash
-        try:
-            funding_rate = calc_funding_rate(self.coin)
-        except Exception:
-            funding_rate = 0.0
+        # Funding rate filter
+        if funding_rate is None:
+            # Live mode: fetch from API, fall back to 0.0 on any failure
+            try:
+                funding_rate = calc_funding_rate(self.coin)
+            except Exception:
+                funding_rate = 0.0
 
         if abs(funding_rate) > self.funding_rate_max:
             return None
@@ -175,7 +183,7 @@ class ThreeEMACross:
         current_idx: int,
         side: str,
         stop_price: float,
-    ) -> Optional[tuple[str, str]]:
+    ) -> tuple[str, str] | None:
         """Determine whether an open position should be exited.
 
         Called once per closed candle while a position is open.

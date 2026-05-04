@@ -12,8 +12,11 @@ cp .env.example .env   # add HL_PRIVATE_KEY and HL_ACCOUNT_ADDRESS
 ## Usage
 
 ```bash
-# Fetch candle data (stores to data/)
-uv run --env-file .env python main.py --mode backtest --fetch --coin HYPE
+# Fetch and store candle + funding data (incremental — only new candles on re-run)
+uv run --env-file .env python main.py --fetch --coin HYPE
+
+# Show what's stored in the lake
+uv run python main.py --stats
 
 # Backtest on stored candles
 uv run --env-file .env python main.py --mode backtest --coin HYPE
@@ -38,11 +41,62 @@ uv run --env-file .env python main.py --mode live --coin HYPE --confirm
 4. Keep if better, revert if worse
 ```
 
+## Historical Data Lake
+
+Candles and funding rates are stored as partitioned Parquet files under `data/lake/`.
+
+```
+data/lake/
+  candles/
+    symbol=HYPE/
+      timeframe=15m/
+        year=2026/
+          month=03/data.parquet
+          month=04/data.parquet
+          month=05/data.parquet
+  funding/
+    symbol=HYPE/
+      year=2026/
+        month=04/data.parquet
+        month=05/data.parquet
+```
+
+`data/metadata.json` tracks the last ingested timestamp per symbol/timeframe and is the
+source of truth for incremental updates. Each `--fetch` only pulls candles newer than
+the last stored timestamp — re-running is safe and fast.
+
+### DuckDB queries
+
+```python
+from data.lake import CandleLake
+
+lake = CandleLake()
+
+# Last 7 days of HYPE 15m candles
+rows = lake.last_n_days("HYPE", "15m", days=7)
+
+# Arbitrary SQL — hive partition columns (symbol, timeframe, year, month) available
+rows = lake.query("""
+    SELECT symbol, timeframe, year, month,
+           MIN(close) AS low_close, MAX(close) AS high_close
+    FROM candles
+    WHERE symbol = 'HYPE' AND timeframe = '15m'
+    GROUP BY symbol, timeframe, year, month
+    ORDER BY year, month
+""")
+
+# Funding map for the backtest engine
+funding_map = lake.read_funding_map("HYPE")   # {hour_ms: rate}
+```
+
 ## Architecture
 
 ```
-data/           fetch_and_save(), get_latest_candles()
-                calc_ema(), calc_atr(), calc_rsi(), calc_funding_rate()
+data/
+  fetcher.py    Raw Hyperliquid API client (fetch_candles, get_latest_candles)
+  ingest.py     Incremental ingestor — reads metadata.json, fetches delta, writes lake
+  lake.py       CandleLake — Parquet I/O (PyArrow) + DuckDB query interface
+  indicators.py calc_ema(), calc_atr(), calc_rsi() — pure functions, no side effects
 
 signals/        ThreeEMACross — 3-EMA crossover strategy with ATR stops
 
@@ -60,7 +114,7 @@ backtest/       BacktestEngine — walk-forward simulation, no lookahead
                 Accepts any JournalBackend for persistence
 
 compare.py      Side-by-side backtest metric comparison
-main.py         CLI: --mode backtest | paper | live
+main.py         CLI: --mode backtest | paper | live | --fetch | --stats
 ```
 
 ## Safety

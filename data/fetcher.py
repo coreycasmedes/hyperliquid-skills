@@ -1,10 +1,16 @@
-"""Fetch OHLCV candles and funding rates from the Hyperliquid public API.
+"""Hyperliquid public API client and data access layer.
 
-No authentication required. All data is saved to data/ as JSON so the
-backtest engine can run offline after an initial --fetch.
+Two responsibilities live here:
+  1. Raw API calls — fetch_candles, fetch_funding_since, fetch_funding_history,
+     get_latest_candles. These are pure HTTP functions with no side effects
+     beyond the returned data.
+  2. High-level accessors — fetch_and_save, fetch_and_save_funding, load_candles,
+     load_funding_map. These delegate to data.ingest (writes) and data.lake
+     (reads) so callers don't need to import those modules directly.
+
+No authentication is required; all endpoints are public.
 """
 
-import json
 import time
 from pathlib import Path
 
@@ -30,18 +36,10 @@ INTERVAL_MINUTES = {
 }
 
 
+# ── Raw API calls ─────────────────────────────────────────────────────────────
+
+
 def _post(payload: dict) -> dict | list:
-    """Send a POST request to the Hyperliquid info endpoint.
-
-    Args:
-        payload: JSON body to send.
-
-    Returns:
-        Parsed JSON response.
-
-    Raises:
-        requests.HTTPError: If the server returns a non-2xx status.
-    """
     response = requests.post(API_URL, json=payload, timeout=10)
     response.raise_for_status()
     return response.json()
@@ -50,131 +48,154 @@ def _post(payload: dict) -> dict | list:
 def fetch_candles(coin: str, interval: str, start_ms: int, end_ms: int) -> list[dict]:
     """Fetch a range of OHLCV candles from Hyperliquid.
 
-    Args:
-        coin: Asset symbol, e.g. "HYPE" or "BTC".
-        interval: Candle interval string, e.g. "15m" or "1h".
-        start_ms: Range start in Unix milliseconds.
-        end_ms: Range end in Unix milliseconds.
-
-    Returns:
-        List of candle dicts with keys: t (open time ms), o, h, l, c, v, n.
-        All price/volume fields are floats. Timestamps are ints.
+    Returns a list of dicts with keys: t (open time ms), o, h, l, c, v, n.
+    All price/volume fields are floats; timestamps are ints.
     """
-    payload = {
-        "type": "candleSnapshot",
-        "req": {
-            "coin": coin,
-            "interval": interval,
-            "startTime": start_ms,
-            "endTime": end_ms,
-        },
-    }
-    raw = _post(payload)
-
-    candles = []
-    for row in raw:
-        candles.append(
-            {
-                "t": int(row["t"]),
-                "o": float(row["o"]),
-                "h": float(row["h"]),
-                "l": float(row["l"]),
-                "c": float(row["c"]),
-                "v": float(row["v"]),
-                "n": int(row["n"]),
-            }
-        )
-    return candles
+    raw = _post(
+        {
+            "type": "candleSnapshot",
+            "req": {
+                "coin": coin,
+                "interval": interval,
+                "startTime": start_ms,
+                "endTime": end_ms,
+            },
+        }
+    )
+    return [
+        {
+            "t": int(row["t"]),
+            "o": float(row["o"]),
+            "h": float(row["h"]),
+            "l": float(row["l"]),
+            "c": float(row["c"]),
+            "v": float(row["v"]),
+            "n": int(row["n"]),
+        }
+        for row in raw
+    ]
 
 
-def fetch_and_save(coin: str, interval: str, lookback_days: int = 90) -> list[dict]:
-    """Fetch candles for a lookback window and persist them to disk.
+def fetch_funding_since(coin: str, start_ms: int) -> list[dict]:
+    """Fetch funding history records starting from a specific UTC millisecond timestamp.
 
-    Overwrites any existing file for this coin/interval pair.
-
-    Args:
-        coin: Asset symbol.
-        interval: Candle interval.
-        lookback_days: How many days of history to fetch (default 90).
-
-    Returns:
-        The fetched list of candle dicts.
+    Each record has keys: coin, fundingRate (str), premium (str), time (int ms).
+    Used by the incremental ingestor; prefer this over fetch_funding_history
+    when you already know the last stored timestamp.
     """
-    end_ms = int(time.time() * 1000)
-    start_ms = end_ms - (lookback_days * 24 * 60 * 60 * 1000)
-
-    print(f"Fetching {coin} {interval} candles ({lookback_days}d)...")
-    candles = fetch_candles(coin, interval, start_ms, end_ms)
-
-    out_path = DATA_DIR / f"candles_{coin}_{interval}.json"
-    with open(out_path, "w") as f:
-        json.dump(candles, f)
-
-    print(f"  {len(candles)} candles → {out_path.name}")
-    return candles
+    return _post({"type": "fundingHistory", "coin": coin, "startTime": start_ms})
 
 
-def load_candles(coin: str, interval: str) -> list[dict]:
-    """Load previously saved candles from disk.
+def fetch_funding_history(coin: str, lookback_days: int = 7) -> list[dict]:
+    """Fetch funding history for the last N days.
 
-    Args:
-        coin: Asset symbol.
-        interval: Candle interval.
-
-    Returns:
-        List of candle dicts.
-
-    Raises:
-        FileNotFoundError: If no saved file exists — run with --fetch first.
+    Convenience wrapper around fetch_funding_since for callers that think in
+    days rather than timestamps.
     """
-    path = DATA_DIR / f"candles_{coin}_{interval}.json"
-    if not path.exists():
-        raise FileNotFoundError(
-            f"No saved data for {coin}/{interval}. Run: python main.py --fetch"
-        )
-    with open(path) as f:
-        return json.load(f)
+    start_ms = int(time.time() * 1000) - (lookback_days * 24 * 60 * 60 * 1000)
+    return fetch_funding_since(coin, start_ms)
 
 
 def get_latest_candles(coin: str, interval: str, count: int = 200) -> list[dict]:
     """Fetch the most recent N closed candles without writing to disk.
 
     Used by the live loop for real-time signal evaluation.
-
-    Args:
-        coin: Asset symbol.
-        interval: Candle interval.
-        count: Number of candles to return (fetches 2× buffer to ensure count).
-
-    Returns:
-        List of the most recent candle dicts, up to count length.
     """
     minutes_per_candle = INTERVAL_MINUTES.get(interval, 15)
     lookback_minutes = count * minutes_per_candle * 2
-
     end_ms = int(time.time() * 1000)
     start_ms = end_ms - (lookback_minutes * 60 * 1000)
-
-    candles = fetch_candles(coin, interval, start_ms, end_ms)
-    return candles[-count:]
+    return fetch_candles(coin, interval, start_ms, end_ms)[-count:]
 
 
-def fetch_funding_history(coin: str, lookback_days: int = 7) -> list[dict]:
-    """Fetch historical funding rate records for a coin.
+# ── High-level accessors ──────────────────────────────────────────────────────
+
+
+def fetch_and_save(coin: str, interval: str, lookback_days: int = 90) -> list[dict]:
+    """Incrementally fetch candles and persist them to the Parquet lake.
+
+    On first call performs a full backfill. Subsequent calls fetch only
+    new candles since the last stored timestamp. Refreshes lake.duckdb
+    so VS Code / DBeaver clients see the new data immediately.
+
+    Returns the stored candles for the requested lookback window.
+    """
+    from data.ingest import ingest_candles
+    from data.lake import CandleLake
+
+    ingest_candles(coin, interval, lookback_days)
+    db_path = CandleLake().to_duckdb()
+    print(f"  DuckDB views refreshed → {db_path.name}")
+    return load_candles(coin, interval, lookback_days=lookback_days)
+
+
+def fetch_and_save_funding(coin: str, lookback_days: int = 90) -> dict[int, float]:
+    """Incrementally fetch funding rates and persist them to the Parquet lake.
+
+    Returns the full stored funding map for this coin.
+    """
+    from data.ingest import ingest_funding
+    from data.lake import CandleLake
+
+    ingest_funding(coin, lookback_days)
+    CandleLake().to_duckdb()
+    return load_funding_map(coin)
+
+
+def load_candles(
+    coin: str,
+    interval: str,
+    lookback_days: int | None = None,
+) -> list[dict]:
+    """Load stored candles from the Parquet lake.
+
+    Returns candle dicts with the legacy keys (t, o, h, l, c, v, n) so the
+    backtest engine and strategy code require no changes.
 
     Args:
         coin: Asset symbol.
-        lookback_days: How many days of history to fetch (default 7).
+        interval: Candle interval string.
+        lookback_days: If set, return only candles from the last N days.
+            Useful when the lake holds months of history but the backtest
+            only needs a recent window.
 
-    Returns:
-        List of funding records. Each record has keys:
-        coin, fundingRate (str), premium (str), time (int ms).
+    Raises:
+        FileNotFoundError: If no data is stored for coin/interval yet.
     """
-    start_ms = int(time.time() * 1000) - (lookback_days * 24 * 60 * 60 * 1000)
+    from data.lake import CandleLake
 
-    payload = {
-        "type": "fundingHistory",
-        "coin": coin,
-        "startTime": start_ms,
-    }
-    return _post(payload)
+    lake = CandleLake()
+
+    start_ms: int | None = None
+    if lookback_days is not None:
+        start_ms = int(time.time() * 1000) - lookback_days * 86_400_000
+
+    rows = lake.read_candles(coin, interval, start_ms=start_ms)
+    if not rows:
+        raise FileNotFoundError(
+            f"No stored data for {coin}/{interval}. Run: python main.py --fetch"
+        )
+
+    return [
+        {
+            "t": r["timestamp"],
+            "o": r["open"],
+            "h": r["high"],
+            "l": r["low"],
+            "c": r["close"],
+            "v": r["volume"],
+            "n": r["num_trades"],
+        }
+        for r in rows
+    ]
+
+
+def load_funding_map(coin: str) -> dict[int, float]:
+    """Load all stored funding rates for coin from the Parquet lake.
+
+    Returns {hour_ms: rate} — the same format used by the backtest engine
+    for its per-candle funding lookup.
+    """
+    from data.lake import CandleLake
+
+    return CandleLake().read_funding_map(coin)

@@ -8,8 +8,6 @@ are filled with float('nan').
 calc_funding_rate is the one exception: it makes a live API call.
 """
 
-import math
-
 import requests
 
 API_URL = "https://api.hyperliquid.xyz/info"
