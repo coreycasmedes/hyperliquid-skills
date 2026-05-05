@@ -14,7 +14,7 @@ from datetime import date
 from pathlib import Path
 
 from data.fetcher import load_funding_map
-from execution.order_manager import Position, calc_trade_pnl
+from execution.order_manager import Position, calc_liq_price, calc_trade_pnl
 from journal.logger import CSVLogger, JournalBackend
 from risk.gate import PortfolioState, RiskGate
 from signals import get_strategy
@@ -63,6 +63,9 @@ class BacktestEngine:
         self.atr_mult: float = config["strategy"].get("atr_stop_mult", 1.5)
         self.leverage: int = config["risk"].get("leverage", 3)
         self.capital: float = config["risk"].get("capital_per_trade", 100.0)
+        self.maintenance_margin_fraction: float = config["risk"].get(
+            "maintenance_margin_fraction", 0.05
+        )
 
         if logger is None:
             today = date.today().isoformat()
@@ -112,19 +115,24 @@ class BacktestEngine:
             if pending_signal is not None:
                 fill = _fill_price(pending_signal, candles[i])
                 if fill is not None:
+                    size_coins = self.gate.position_size_coins(fill)
                     open_position = Position(
                         coin=self.coin,
                         side=pending_signal.side,
                         entry_price=fill,
                         stop_price=pending_signal.stop_price,
-                        size_coins=self.gate.position_size_coins(fill),
+                        liq_price=calc_liq_price(
+                            fill, size_coins, pending_signal.side,
+                            self.leverage, self.maintenance_margin_fraction,
+                        ),
+                        size_coins=size_coins,
                         entry_time_ms=candles[i]["t"],
                         leverage=self.leverage,
                     )
                     open_position_entry_idx = i
                     portfolio.open_positions = [open_position]
                     entry_signal = pending_signal
-                pending_signal = None
+                    pending_signal = None
 
             # ── 2. Check exits on the open position ───────────────────────
             if open_position is not None:
@@ -259,8 +267,20 @@ def _check_exit(
     """
     candle = candles[i]
     stop = position.stop_price
+    liq = position.liq_price
 
-    # Stage 1: intra-candle stop using low / high
+    # Stage 1a: liquidation floor — exchange force-closes before price can gap further.
+    # For longs: liq_price < stop_price < entry_price. A gap below liq_price means
+    # the exchange liquidated at liq_price, not the candle open.
+    if position.side == "long" and candle["l"] <= liq:
+        exit_price = max(candle["o"], liq)
+        return ("liquidation", "margin_call", exit_price)
+
+    if position.side == "short" and candle["h"] >= liq:
+        exit_price = min(candle["o"], liq)
+        return ("liquidation", "margin_call", exit_price)
+
+    # Stage 1b: intra-candle ATR stop using low / high
     if position.side == "long" and candle["l"] <= stop:
         # Gap below stop → fill at open, otherwise fill at stop
         exit_price = candle["o"] if candle["o"] < stop else stop

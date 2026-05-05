@@ -29,6 +29,42 @@ PAPER_TRADES_FILE = TRADES_DIR / "paper_trades.json"
 KILL_FILE = PROJECT_ROOT / "KILL"
 
 
+def calc_liq_price(
+    entry_price: float,
+    size_coins: float,
+    side: str,
+    leverage: int,
+    maintenance_margin_fraction: float,
+) -> float:
+    """Compute the exchange liquidation price using the Hyperliquid formula.
+
+    liq_price = entry - side_val × margin_available / size_coins / (1 - l × side_val)
+
+    Where:
+        l               = maintenance_margin_fraction (= 1 / maintenance_leverage)
+        side_val        = +1 long, -1 short
+        margin_available = notional/leverage - notional×maintenance_margin_fraction
+        notional        = entry_price × size_coins
+
+    Args:
+        entry_price: Fill price of the position.
+        size_coins: Position size in coin units.
+        side: "long" or "short".
+        leverage: Leverage applied (user-chosen, e.g. 3).
+        maintenance_margin_fraction: Maintenance margin as a fraction of notional
+            (= 1 / maintenance_leverage = 1 / (2 × max_leverage) for the asset).
+            Defaults in config to 0.05 (5%, matching a 10× max-leverage asset).
+
+    Returns:
+        Liquidation price as a float.
+    """
+    side_val = 1.0 if side == "long" else -1.0
+    notional = entry_price * size_coins
+    margin_available = notional / leverage - notional * maintenance_margin_fraction
+    mmf = maintenance_margin_fraction
+    return entry_price - side_val * margin_available / size_coins / (1 - mmf * side_val)
+
+
 def calc_trade_pnl(position: "Position", close_price: float) -> float:
     """Calculate gross P&L in USDC for a closed position.
 
@@ -69,6 +105,7 @@ class Position:
     side: str
     entry_price: float
     stop_price: float
+    liq_price: float
     size_coins: float
     entry_time_ms: int
     leverage: int
@@ -149,6 +186,9 @@ class OrderManager:
         self.network: str = exec_cfg.get("network", "testnet").lower()
         self.tick_offset: int = exec_cfg.get("tick_offset_ticks", 2)
         self.leverage: int = risk_cfg.get("leverage", 3)
+        self.maintenance_margin_fraction: float = risk_cfg.get(
+            "maintenance_margin_fraction", 0.05
+        )
 
         TRADES_DIR.mkdir(exist_ok=True)
 
@@ -329,6 +369,10 @@ class OrderManager:
             side=signal.side,
             entry_price=limit_price,
             stop_price=signal.stop_price,
+            liq_price=calc_liq_price(
+                limit_price, size_coins, signal.side,
+                self.leverage, self.maintenance_margin_fraction,
+            ),
             size_coins=size_coins,
             entry_time_ms=signal.timestamp,
             leverage=self.leverage,
@@ -494,6 +538,10 @@ class OrderManager:
             side=signal.side,
             entry_price=limit_price,
             stop_price=signal.stop_price,
+            liq_price=calc_liq_price(
+                limit_price, size_coins, signal.side,
+                self.leverage, self.maintenance_margin_fraction,
+            ),
             size_coins=size_coins,
             entry_time_ms=signal.timestamp,
             leverage=self.leverage,
