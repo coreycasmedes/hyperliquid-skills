@@ -69,7 +69,7 @@ class BacktestEngine:
             version = config.get("version", 1)
             TRADES_DIR.mkdir(exist_ok=True)
             filepath = TRADES_DIR / f"backtest_{coin}_{today}_v{version}.csv"
-            logger = CSVLogger(filepath)
+            logger = CSVLogger(filepath, overwrite=True)
 
         self.logger: JournalBackend = logger
 

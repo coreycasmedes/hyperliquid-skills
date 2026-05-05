@@ -131,22 +131,27 @@ def compute_stats(rows: list[dict]) -> dict:
 
 
 class CSVLogger:
-    """Append-only CSV trade journal. Satisfies JournalBackend.
+    """CSV trade journal. Satisfies JournalBackend.
 
-    Creates the file and writes the header on first use. Subsequent calls
-    to log_trade() append rows without re-reading the file.
+    In overwrite mode (backtest): truncates the file on each instantiation
+    so every run produces a clean, self-contained result.
+    In append mode (live/paper): adds rows to an existing journal without
+    disturbing prior trades.
     """
 
-    def __init__(self, filepath: Path):
-        """Initialise the logger, creating the CSV file if needed.
+    def __init__(self, filepath: Path, overwrite: bool = False):
+        """Initialise the logger.
 
         Args:
             filepath: Full path to the CSV file.
+            overwrite: If True, truncate any existing file and write a fresh
+                header. Use for backtests. If False (default), create the
+                file only when it does not yet exist — safe for live journals.
         """
         self.filepath = Path(filepath)
         self.filepath.parent.mkdir(parents=True, exist_ok=True)
 
-        if not self.filepath.exists():
+        if overwrite or not self.filepath.exists():
             with open(self.filepath, "w", newline="") as f:
                 csv.DictWriter(f, fieldnames=CSV_COLUMNS).writeheader()
 
