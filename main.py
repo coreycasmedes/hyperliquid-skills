@@ -179,8 +179,8 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         choices=["backtest", "paper", "live"],
-        default="paper",
-        help="Execution mode (default: paper)",
+        default=None,
+        help="Execution mode. Required unless using --fetch or --stats alone.",
     )
     parser.add_argument(
         "--coin",
@@ -215,6 +215,23 @@ def main() -> None:
         CandleLake().print_stats()
         sys.exit(0)
 
+    config_path = PROJECT_ROOT / args.config
+    with open(config_path) as f:
+        config = json.load(f)
+
+    TRADES_DIR.mkdir(exist_ok=True)
+
+    if args.fetch:
+        lookback = config.get("lookback_days", 90)
+        fetch_and_save(args.coin, config["interval"], lookback)
+        fetch_and_save_funding(args.coin, lookback)
+        if args.mode is None:
+            sys.exit(0)  # fetch-only — no mode requested
+
+    if args.mode is None:
+        print("ERROR: --mode is required (backtest, paper, live). Use --fetch to update data only.")
+        sys.exit(1)
+
     # ── Live mode safety gate ─────────────────────────────────────────────
     if args.mode == "live" and not args.confirm:
         print("ERROR: Live trading requires the --confirm flag.\n")
@@ -223,20 +240,9 @@ def main() -> None:
         )
         sys.exit(1)
 
-    config_path = PROJECT_ROOT / args.config
-    with open(config_path) as f:
-        config = json.load(f)
-
     # CLI mode overrides config so you don't have to edit the file for paper runs
     if args.mode in ("paper", "live"):
         config["execution"]["mode"] = args.mode
-
-    TRADES_DIR.mkdir(exist_ok=True)
-
-    if args.fetch:
-        lookback = config.get("lookback_days", 90)
-        fetch_and_save(args.coin, config["interval"], lookback)
-        fetch_and_save_funding(args.coin, lookback)
 
     if args.mode == "backtest":
         run_backtest(args.coin, config)

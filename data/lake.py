@@ -231,6 +231,42 @@ class CandleLake:
         rows = _duckdb_read(files, "timestamp, rate", start_ms)
         return {r["timestamp"]: r["rate"] for r in rows}
 
+    def last_candle_ts(self, symbol: str, timeframe: str) -> int | None:
+        """Return the open-time ms of the most recent stored candle, or None."""
+        base = self._candles_dir / f"symbol={symbol}" / f"timeframe={timeframe}"
+        if not base.exists():
+            return None
+        files = sorted(base.rglob("*.parquet"))
+        if not files:
+            return None
+        conn = duckdb.connect()
+        try:
+            files_repr = repr([str(f) for f in files])
+            row = conn.execute(
+                f"SELECT MAX(timestamp) AS ts FROM read_parquet({files_repr})"
+            ).fetchone()
+            return int(row[0]) if row and row[0] is not None else None
+        finally:
+            conn.close()
+
+    def last_funding_ts(self, symbol: str) -> int | None:
+        """Return the hour_ms of the most recent stored funding record, or None."""
+        base = self._funding_dir / f"symbol={symbol}"
+        if not base.exists():
+            return None
+        files = sorted(base.rglob("*.parquet"))
+        if not files:
+            return None
+        conn = duckdb.connect()
+        try:
+            files_repr = repr([str(f) for f in files])
+            row = conn.execute(
+                f"SELECT MAX(timestamp) AS ts FROM read_parquet({files_repr})"
+            ).fetchone()
+            return int(row[0]) if row and row[0] is not None else None
+        finally:
+            conn.close()
+
     # ── DuckDB query interface ─────────────────────────────────────────────────
 
     def query(self, sql: str) -> list[dict]:
@@ -308,7 +344,12 @@ class CandleLake:
         candles_glob = str(self._candles_dir / "**" / "*.parquet")
         funding_glob = str(self._funding_dir / "**" / "*.parquet")
 
-        conn = duckdb.connect(str(path))
+        try:
+            conn = duckdb.connect(str(path))
+        except duckdb.IOException:
+            print(f"  Warning: {path.name} is locked by another process (VS Code?). Parquet data unaffected.")
+            return path
+
         try:
             conn.execute("DROP VIEW IF EXISTS candles")
             conn.execute("DROP VIEW IF EXISTS funding")
