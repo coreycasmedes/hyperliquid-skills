@@ -10,7 +10,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from data.indicators import calc_atr, calc_ema, calc_funding_rate
+from data.indicators import calc_adx, calc_atr, calc_ema, calc_funding_rate
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.json"
 
@@ -82,10 +82,13 @@ class ThreeEMACross:
         self.direction: str = config.get("direction", "long_only")
         self.max_hold_candles: int = config.get("max_hold_candles", 48)
         self.cross_lookback: int = config.get("cross_lookback", 3)
+        self.min_adx: float = config.get("min_adx", 0.0)
 
     @property
     def warmup_candles(self) -> int:
-        return self.ema_slow + self.cross_lookback + 2
+        base = self.ema_slow + self.cross_lookback + 2
+        adx_warmup = 2 * self.atr_period + 2 if self.min_adx > 0 else 0
+        return max(base, adx_warmup)
 
     # ------------------------------------------------------------------
     # Public interface
@@ -130,6 +133,13 @@ class ThreeEMACross:
 
         if any(math.isnan(v) for v in [fast, mid, slow, atr]):
             return None
+
+        # ADX regime filter — skip if market is choppy
+        if self.min_adx > 0:
+            adx_series = calc_adx(candles, self.atr_period)
+            adx = adx_series[last]
+            if math.isnan(adx) or adx < self.min_adx:
+                return None
 
         # Funding rate filter
         if funding_rate is None:

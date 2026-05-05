@@ -19,7 +19,7 @@ import json
 import math
 from pathlib import Path
 
-from data.indicators import calc_atr, calc_funding_rate
+from data.indicators import calc_adx, calc_atr, calc_funding_rate
 from signals.strategy import Signal
 
 CONFIG_PATH = Path(__file__).parent.parent / "config.json"
@@ -41,10 +41,13 @@ class DonchianBreakout:
         self.funding_rate_max: float = config.get("funding_rate_max", 0.0005)
         self.direction: str = config.get("direction", "both")
         self.max_hold_candles: int = config.get("max_hold_candles", 48)
+        self.min_adx: float = config.get("min_adx", 0.0)
 
     @property
     def warmup_candles(self) -> int:
-        return self.channel_period + self.atr_period + 2
+        base = self.channel_period + self.atr_period + 2
+        adx_warmup = 2 * self.atr_period + 2 if self.min_adx > 0 else 0
+        return max(base, adx_warmup)
 
     def generate_signal(
         self,
@@ -66,6 +69,12 @@ class DonchianBreakout:
 
         if math.isnan(atr):
             return None
+
+        if self.min_adx > 0:
+            adx_series = calc_adx(candles, self.atr_period)
+            adx = adx_series[last]
+            if math.isnan(adx) or adx < self.min_adx:
+                return None
 
         if funding_rate is None:
             try:
