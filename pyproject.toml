@@ -10,10 +10,16 @@ dependencies = [
     "requests>=2.33.1",
 ]
 
+
 [dependency-groups]
 dev = [
+    "pytest>=9.0.3",
     "ruff>=0.15.12",
 ]
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
