@@ -4,8 +4,8 @@ Reuses compute_stats() from journal/logger.py so metrics are computed
 identically to what CSVLogger.summary() reports.
 
 Usage:
-    uv run python compare.py trades/backtest_HYPE_2026-05-04_v1.csv \\
-                             trades/backtest_HYPE_2026-05-04_v2.csv
+    uv run python scripts/compare.py trades/backtest_HYPE_2026-05-04_v1.csv \\
+                                     trades/backtest_HYPE_2026-05-04_v2.csv
 """
 
 import csv
@@ -16,17 +16,6 @@ from journal.logger import compute_stats
 
 
 def _load_csv(filepath: str) -> list[dict]:
-    """Load a backtest CSV and return rows as a list of dicts.
-
-    Args:
-        filepath: Path to the CSV file.
-
-    Returns:
-        List of row dicts.
-
-    Raises:
-        SystemExit: If the file does not exist.
-    """
     path = Path(filepath)
     if not path.exists():
         print(f"ERROR: File not found: {filepath}")
@@ -38,7 +27,7 @@ def _load_csv(filepath: str) -> list[dict]:
 def main() -> None:
     """Load two CSVs, compute stats for each, and print a comparison table."""
     if len(sys.argv) != 3:
-        print("Usage: uv run python compare.py <file1.csv> <file2.csv>")
+        print("Usage: uv run python scripts/compare.py <file1.csv> <file2.csv>")
         sys.exit(1)
 
     f1, f2 = sys.argv[1], sys.argv[2]
@@ -50,7 +39,7 @@ def main() -> None:
 
     # (display_name, stats_key, format_string, higher_is_better)
     metrics = [
-        ("Total trades", "total_trades", "{:.0f}", None),  # neutral
+        ("Total trades", "total_trades", "{:.0f}", None),
         ("Win rate", "win_rate", "{:.1f}%", True),
         ("Total P&L", "total_pnl", "${:+.2f}", True),
         ("Avg winner", "avg_winner", "${:+.2f}", True),

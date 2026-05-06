@@ -4,9 +4,9 @@ Runs the backtest engine across a parameter grid entirely in memory — no
 CSV files written. Prints results ranked by profit factor.
 
 Usage:
-    uv run python optimize.py --coin HYPE --config config_donchian.json
-    uv run python optimize.py --coin HYPE --config config_volatility.json
-    uv run python optimize.py --coin HYPE --config config.json
+    uv run python scripts/optimize.py --coin HYPE --config config_donchian.json
+    uv run python scripts/optimize.py --coin HYPE --config config_volatility.json
+    uv run python scripts/optimize.py --coin HYPE --config config.json
 """
 
 import argparse
@@ -61,8 +61,6 @@ assert isinstance(_MemLogger(), JournalBackend)
 
 # ── Per-strategy param grids ──────────────────────────────────────────────────
 
-# Each entry is a list of (param_name, [values_to_try]).
-# The grid is the cartesian product of all value lists.
 _GRIDS: dict[str, list[tuple[str, list]]] = {
     "three_ema_cross": [
         ("atr_stop_mult", [1.0, 1.5, 2.0, 2.5]),
@@ -114,7 +112,6 @@ def run_grid(coin: str, base_config: dict, top_n: int = 15) -> None:
         logger = _MemLogger()
         engine = BacktestEngine(coin, cfg, logger=logger)
 
-        # Suppress per-run stdout
         import io
         import sys as _sys
 
@@ -129,7 +126,6 @@ def run_grid(coin: str, base_config: dict, top_n: int = 15) -> None:
         stats = logger.summary()
         results.append((params, stats))
 
-    # Rank by profit factor (descending), then total_pnl as tiebreak
     results.sort(
         key=lambda x: (
             x[1]["profit_factor"] if x[1]["profit_factor"] != float("inf") else 999,
